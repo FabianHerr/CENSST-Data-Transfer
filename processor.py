@@ -9,20 +9,31 @@ def process_single_file(source_file, period_to_find):
     Returns: (new_rows_data, warning_message)
     """
     try:
+        # Normalize path for Windows (handles spaces and special characters)
+        normalized_file = os.path.normpath(source_file)
+        
+        # Verify file exists before attempting to open
+        if not os.path.exists(normalized_file):
+            error_msg = f"Le fichier n'existe pas: {normalized_file}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return [], f"Error: File not found - {normalized_file}"
+        
+        print(f"DEBUG: Tentative d'ouverture de : {normalized_file}")
+        
         # Load source file
-        df_source = pd.read_excel(source_file, sheet_name='CNESST', header=None, engine='openpyxl')
+        df_source = pd.read_excel(normalized_file, sheet_name='CNESST', header=None, engine='openpyxl')
         
         # 1. Extract Audiologist Name from Cell C3 (Row 2, Col 2)
         audiologist = str(df_source.iloc[2, 2]).strip()
         if not audiologist or audiologist.lower() in ['nan', 'none', '']:
-            return [], f"Warning: Could not find Audiologist name in {os.path.basename(source_file)}"
+            return [], f"Warning: Could not find Audiologist name in {os.path.basename(normalized_file)}"
         
         # 2. Find the period row in Column C (Index 2)
         period_col = df_source.iloc[:, 2].astype(str).str.strip()
         period_rows = df_source[period_col == str(period_to_find)]
         
         if period_rows.empty:
-            return [], f"Warning: No data found for Period {period_to_find} in {os.path.basename(source_file)}"
+            return [], f"Warning: No data found for Period {period_to_find} in {os.path.basename(normalized_file)}"
         
         # 3. Extract all patient rows following each period header
         new_rows_data = []
@@ -69,7 +80,9 @@ def process_single_file(source_file, period_to_find):
         return new_rows_data, None
         
     except Exception as e:
-        return [], f"Error processing {os.path.basename(source_file)}: {str(e)}"
+        error_msg = f"Error processing {os.path.basename(source_file)}: {str(e)}"
+        print(f"DEBUG: ERREUR lors du traitement - {error_msg}")
+        return [], error_msg
 
 def write_rows_to_sheet(ws, new_rows_data, next_row, source_row):
     """Helper function to write rows to the sheet with formatting"""
@@ -154,23 +167,62 @@ def run_transfer_logic(source_path, target_path, period_to_find):
     - Column K: Period Number
     """
     try:
+        # Normalize paths for Windows (handles spaces and special characters)
+        normalized_source = os.path.normpath(source_path)
+        normalized_target = os.path.normpath(target_path)
+        
+        print(f"DEBUG: run_transfer_logic - Dossier source normalisé: {normalized_source}")
+        print(f"DEBUG: run_transfer_logic - Fichier cible normalisé: {normalized_target}")
+        
+        # Verify paths exist
+        if not os.path.exists(normalized_source):
+            error_msg = f"Error: Le dossier source n'existe pas: {normalized_source}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        if not os.path.exists(normalized_target):
+            error_msg = f"Error: Le fichier cible n'existe pas: {normalized_target}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
         # Check if source_path is a directory
-        if not os.path.isdir(source_path):
-            return f"Error: {source_path} is not a valid folder."
+        if not os.path.isdir(normalized_source):
+            error_msg = f"Error: {normalized_source} is not a valid folder."
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
         
         # Find all Excel files in the folder
         excel_files = []
         for ext in ['*.xlsx', '*.xlsm', '*.XLSX', '*.XLSM']:
-            excel_files.extend(glob.glob(os.path.join(source_path, ext)))
+            search_pattern = os.path.join(normalized_source, ext)
+            print(f"DEBUG: Recherche de fichiers avec le pattern: {search_pattern}")
+            found_files = glob.glob(search_pattern)
+            excel_files.extend(found_files)
+            print(f"DEBUG: Fichiers trouvés avec {ext}: {len(found_files)}")
         
         if not excel_files:
-            return f"Error: No Excel files found in the folder: {source_path}"
+            error_msg = f"Error: No Excel files found in the folder: {normalized_source}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        # Normalize all file paths
+        excel_files = [os.path.normpath(f) for f in excel_files]
         
         # Sort files for consistent processing
         excel_files.sort()
+        print(f"DEBUG: Total fichiers Excel trouvés: {len(excel_files)}")
+        for idx, f in enumerate(excel_files, 1):
+            print(f"DEBUG:   {idx}. {f}")
         
+        # Verify target file exists before loading
+        if not os.path.exists(normalized_target):
+            error_msg = f"Error: Le fichier cible n'existe pas: {normalized_target}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        print(f"DEBUG: Tentative d'ouverture du fichier cible: {normalized_target}")
         # Load workbook once at the beginning
-        wb = openpyxl.load_workbook(target_path, keep_vba=True)
+        wb = openpyxl.load_workbook(normalized_target, keep_vba=True)
         
         # Get or create the Suivi sheet
         if 'Suivi' in wb.sheetnames:
@@ -222,7 +274,8 @@ def run_transfer_logic(source_path, target_path, period_to_find):
                 total_added += len(new_rows_data)
                 files_processed += 1
                 # Save after each file to preserve progress
-                wb.save(target_path)
+                print(f"DEBUG: Sauvegarde du fichier cible: {normalized_target}")
+                wb.save(normalized_target)
                 
                 # Rename the file to indicate successful transfer
                 try:
@@ -270,26 +323,65 @@ def run_transfer_all_periods(source_path, target_path):
     Processes each period sequentially and transfers all matching data.
     """
     try:
+        # Normalize paths for Windows (handles spaces and special characters)
+        normalized_source = os.path.normpath(source_path)
+        normalized_target = os.path.normpath(target_path)
+        
+        print(f"DEBUG: run_transfer_all_periods - Dossier source normalisé: {normalized_source}")
+        print(f"DEBUG: run_transfer_all_periods - Fichier cible normalisé: {normalized_target}")
+        
+        # Verify paths exist
+        if not os.path.exists(normalized_source):
+            error_msg = f"Error: Le dossier source n'existe pas: {normalized_source}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        if not os.path.exists(normalized_target):
+            error_msg = f"Error: Le fichier cible n'existe pas: {normalized_target}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
         # Check if source_path is a directory
-        if not os.path.isdir(source_path):
-            return f"Error: {source_path} is not a valid folder."
+        if not os.path.isdir(normalized_source):
+            error_msg = f"Error: {normalized_source} is not a valid folder."
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
         
         # Find all Excel files in the folder (exclude already processed files)
         excel_files = []
         for ext in ['*.xlsx', '*.xlsm', '*.XLSX', '*.XLSM']:
-            excel_files.extend(glob.glob(os.path.join(source_path, ext)))
+            search_pattern = os.path.join(normalized_source, ext)
+            print(f"DEBUG: Recherche de fichiers avec le pattern: {search_pattern}")
+            found_files = glob.glob(search_pattern)
+            excel_files.extend(found_files)
+            print(f"DEBUG: Fichiers trouvés avec {ext}: {len(found_files)}")
         
         # Filter out files that start with "(TRANSFER COMPLETED)-"
         excel_files = [f for f in excel_files if not os.path.basename(f).startswith("(TRANSFER COMPLETED)-")]
         
         if not excel_files:
-            return f"Error: No unprocessed Excel files found in the folder: {source_path}"
+            error_msg = f"Error: No unprocessed Excel files found in the folder: {normalized_source}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        # Normalize all file paths
+        excel_files = [os.path.normpath(f) for f in excel_files]
         
         # Sort files for consistent processing
         excel_files.sort()
+        print(f"DEBUG: Total fichiers Excel non traités trouvés: {len(excel_files)}")
+        for idx, f in enumerate(excel_files, 1):
+            print(f"DEBUG:   {idx}. {f}")
         
+        # Verify target file exists before loading
+        if not os.path.exists(normalized_target):
+            error_msg = f"Error: Le fichier cible n'existe pas: {normalized_target}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            return error_msg
+        
+        print(f"DEBUG: Tentative d'ouverture du fichier cible: {normalized_target}")
         # Load workbook once at the beginning
-        wb = openpyxl.load_workbook(target_path, keep_vba=True)
+        wb = openpyxl.load_workbook(normalized_target, keep_vba=True)
         
         # Get or create the Suivi sheet
         if 'Suivi' in wb.sheetnames:
@@ -335,12 +427,20 @@ def run_transfer_all_periods(source_path, target_path):
             
             # Process each file for this period
             for excel_file in excel_files:
+                # Normalize file path
+                normalized_excel_file = os.path.normpath(excel_file)
+                
                 # Skip files that have already been renamed
-                if os.path.basename(excel_file).startswith("(TRANSFER COMPLETED)-"):
+                if os.path.basename(normalized_excel_file).startswith("(TRANSFER COMPLETED)-"):
+                    continue
+                
+                # Verify file still exists
+                if not os.path.exists(normalized_excel_file):
+                    print(f"DEBUG: Avertissement - Le fichier n'existe plus: {normalized_excel_file}")
                     continue
                 
                 new_rows_data, warning_msg = process_single_file(
-                    excel_file, period_str
+                    normalized_excel_file, period_str
                 )
                 
                 if warning_msg and "Error" in warning_msg:
@@ -351,9 +451,10 @@ def run_transfer_all_periods(source_path, target_path):
                     next_row = write_rows_to_sheet(ws, new_rows_data, next_row, source_row)
                     period_added += len(new_rows_data)
                     total_added_all += len(new_rows_data)
-                    files_with_data.add(excel_file)  # Mark this file as having data
+                    files_with_data.add(normalized_excel_file)  # Mark this file as having data
                     # Save after each period's data is written
-                    wb.save(target_path)
+                    print(f"DEBUG: Sauvegarde du fichier cible après période {period}: {normalized_target}")
+                    wb.save(normalized_target)
             
             if period_added > 0:
                 periods_with_data.append(period)
@@ -361,13 +462,17 @@ def run_transfer_all_periods(source_path, target_path):
         
         # Rename files that had data transferred (only rename once per file)
         for excel_file in files_with_data:
+            # Normalize file path
+            normalized_excel_file = os.path.normpath(excel_file)
+            
             # Double-check file hasn't been renamed already
-            if os.path.exists(excel_file) and not os.path.basename(excel_file).startswith("(TRANSFER COMPLETED)-"):
+            if os.path.exists(normalized_excel_file) and not os.path.basename(normalized_excel_file).startswith("(TRANSFER COMPLETED)-"):
                 try:
-                    file_dir = os.path.dirname(excel_file)
-                    file_name = os.path.basename(excel_file)
+                    file_dir = os.path.dirname(normalized_excel_file)
+                    file_name = os.path.basename(normalized_excel_file)
                     new_name = f"(TRANSFER COMPLETED)-{file_name}"
-                    new_path = os.path.join(file_dir, new_name)
+                    new_path = os.path.normpath(os.path.join(file_dir, new_name))
+                    print(f"DEBUG: Tentative de renommage: {normalized_excel_file} -> {new_path}")
                     
                     # If a file with the new name already exists, add a number suffix
                     counter = 1
@@ -377,9 +482,12 @@ def run_transfer_all_periods(source_path, target_path):
                         new_path = f"{name_without_ext} ({counter}){ext}"
                         counter += 1
                     
-                    os.rename(excel_file, new_path)
+                    os.rename(normalized_excel_file, new_path)
+                    print(f"DEBUG: Fichier renommé avec succès: {new_path}")
                 except Exception as rename_error:
-                    all_warnings.append(f"Warning: Could not rename {os.path.basename(excel_file)}: {str(rename_error)}")
+                    error_msg = f"Warning: Could not rename {os.path.basename(normalized_excel_file)}: {str(rename_error)}"
+                    print(f"DEBUG: ERREUR lors du renommage - {error_msg}")
+                    all_warnings.append(error_msg)
         
         # Build result message
         result_parts = [

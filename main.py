@@ -116,9 +116,12 @@ class CNESSTApp:
             title="Select Folder Containing Honoraires Files"
         )
         if folder:
-            self.source_path.set(folder)
+            # Normalize path for Windows (handles spaces and special characters)
+            normalized_folder = os.path.normpath(folder)
+            self.source_path.set(normalized_folder)
             # Update label to show wrapped path
-            self.source_label.config(text=folder, wraplength=550)
+            self.source_label.config(text=normalized_folder, wraplength=550)
+            print(f"DEBUG: Dossier source sélectionné: {normalized_folder}")
 
     def get_target_file(self):
         """Select target SUIVI master file with macOS-compatible filetypes"""
@@ -127,9 +130,12 @@ class CNESSTApp:
             filetypes=[("Excel Files", "*.xlsx *.xlsm"), ("All Files", "*.*")]
         )
         if file:
-            self.target_path.set(file)
+            # Normalize path for Windows (handles spaces and special characters)
+            normalized_file = os.path.normpath(file)
+            self.target_path.set(normalized_file)
             # Update label to show wrapped path
-            self.target_label.config(text=file, wraplength=550)
+            self.target_label.config(text=normalized_file, wraplength=550)
+            print(f"DEBUG: Fichier Suivi sélectionné: {normalized_file}")
 
     def execute(self):
         """Execute the data transfer process for selected period"""
@@ -138,17 +144,41 @@ class CNESSTApp:
                                  "Please select both the folder and the Suivi file before transferring.")
             return
         
+        # Normalize paths before processing
+        source_folder = os.path.normpath(self.source_path.get())
+        target_file = os.path.normpath(self.target_path.get())
+        
+        # Verify paths exist
+        if not os.path.exists(source_folder):
+            messagebox.showerror("Error", 
+                               f"Le dossier source n'existe pas:\n{source_folder}\n\n"
+                               "Veuillez sélectionner un dossier valide.")
+            return
+        
+        if not os.path.exists(target_file):
+            messagebox.showerror("Error", 
+                               f"Le fichier Suivi n'existe pas:\n{target_file}\n\n"
+                               "Veuillez sélectionner un fichier valide.")
+            return
+        
+        print(f"DEBUG: Démarrage du transfert")
+        print(f"DEBUG: Dossier source: {source_folder}")
+        print(f"DEBUG: Fichier cible: {target_file}")
+        print(f"DEBUG: Période sélectionnée: {self.selected_period.get()}")
+        
         # Disable button during processing
         self.root.config(cursor="wait")
         try:
             result = run_transfer_logic(
-                self.source_path.get(), 
-                self.target_path.get(), 
+                source_folder, 
+                target_file, 
                 self.selected_period.get()
             )
             messagebox.showinfo("Transfer Result", result)
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            error_msg = f"Une erreur s'est produite:\n{str(e)}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            messagebox.showerror("Error", error_msg)
         finally:
             self.root.config(cursor="")
     
@@ -159,6 +189,23 @@ class CNESSTApp:
                                  "Please select both the folder and the Suivi file before transferring.")
             return
         
+        # Normalize paths before processing
+        source_folder = os.path.normpath(self.source_path.get())
+        target_file = os.path.normpath(self.target_path.get())
+        
+        # Verify paths exist
+        if not os.path.exists(source_folder):
+            messagebox.showerror("Error", 
+                               f"Le dossier source n'existe pas:\n{source_folder}\n\n"
+                               "Veuillez sélectionner un dossier valide.")
+            return
+        
+        if not os.path.exists(target_file):
+            messagebox.showerror("Error", 
+                               f"Le fichier Suivi n'existe pas:\n{target_file}\n\n"
+                               "Veuillez sélectionner un fichier valide.")
+            return
+        
         # Confirm with user
         confirm = messagebox.askyesno("Confirm Transfer", 
                                      "This will transfer data for ALL periods (1-26) that have data.\n\n"
@@ -166,16 +213,22 @@ class CNESSTApp:
         if not confirm:
             return
         
+        print(f"DEBUG: Démarrage du transfert pour toutes les périodes")
+        print(f"DEBUG: Dossier source: {source_folder}")
+        print(f"DEBUG: Fichier cible: {target_file}")
+        
         # Disable button during processing
         self.root.config(cursor="wait")
         try:
             result = run_transfer_all_periods(
-                self.source_path.get(), 
-                self.target_path.get()
+                source_folder, 
+                target_file
             )
             messagebox.showinfo("Transfer Result", result)
         except Exception as e:
-            messagebox.showerror("Error", f"An error occurred:\n{str(e)}")
+            error_msg = f"Une erreur s'est produite:\n{str(e)}"
+            print(f"DEBUG: ERREUR - {error_msg}")
+            messagebox.showerror("Error", error_msg)
         finally:
             self.root.config(cursor="")
 
